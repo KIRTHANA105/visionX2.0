@@ -137,6 +137,7 @@ const LegalQA = ({ userId, loadSessionId, onSessionLoaded }: LegalQAProps) => {
                 }
             };
             const stream = await tryStream();
+            
             let modelResponseText = '';
             setMessages(prev => [...prev, { role: 'model', parts: [{ text: '' }] }]);
 
