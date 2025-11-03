@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { documentService } from '../services/supabaseService';
-import { ShieldCheckIcon, ExclamationCircleIcon, LightbulbIcon, BalanceScaleIcon, TrashIcon } from './icons';
+import { ShieldCheckIcon, ExclamationCircleIcon, LightbulbIcon, BalanceScaleIcon, TrashIcon, DownloadIcon } from './icons';
 import LoadingSpinner from './LoadingSpinner';
 
 interface Document {
@@ -226,14 +226,26 @@ const DocumentHistory = ({ userId }: DocumentHistoryProps) => {
                                 </div>
 
                                 {selectedDoc.file_url && (
-                                    <div className="p-4 bg-gray-50 dark:bg-slate-700 rounded-lg">
+                                    <div className="p-4 bg-gray-50 dark:bg-slate-700 rounded-lg flex flex-col sm:flex-row gap-3">
                                         <a
                                             href={selectedDoc.file_url}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="text-brand-secondary hover:underline"
+                                            className="flex items-center justify-center px-4 py-2 bg-brand-secondary text-white rounded-lg hover:bg-sky-600 transition-colors"
                                         >
-                                            View Original Document →
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                            </svg>
+                                            View Document
+                                        </a>
+                                        <a
+                                            href={selectedDoc.file_url}
+                                            download={selectedDoc.file_name}
+                                            className="flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                                        >
+                                            <DownloadIcon className="w-5 h-5 mr-2" />
+                                            Download
                                         </a>
                                     </div>
                                 )}

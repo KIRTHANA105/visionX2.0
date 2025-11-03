@@ -70,11 +70,35 @@ export const documentService = {
 
         if (error) throw error;
 
+        // Get public URL from storage bucket
         const { data: { publicUrl } } = supabase.storage
             .from('documents')
             .getPublicUrl(fileName);
 
         return publicUrl;
+    },
+
+    async getFileFromStorage(filePath: string): Promise<string> {
+        // Get public URL from storage bucket 'documents'
+        const { data: { publicUrl } } = supabase.storage
+            .from('documents')
+            .getPublicUrl(filePath);
+        
+        return publicUrl;
+    },
+
+    async listUserFiles(userId: string) {
+        // List all files for a user from the 'documents' storage bucket
+        const { data, error } = await supabase.storage
+            .from('documents')
+            .list(`${userId}/`, {
+                limit: 100,
+                offset: 0,
+                sortBy: { column: 'name', order: 'desc' }
+            });
+
+        if (error) throw error;
+        return data;
     },
 
     async saveDocument(documentData: {
@@ -122,7 +146,7 @@ export const documentService = {
     },
 
     async deleteDocument(documentId: string, userId: string) {
-        // First get the document to find the file URL
+        // First get the document to find the file path
         const { data: doc } = await supabase
             .from('documents')
             .select('file_url')
@@ -130,7 +154,7 @@ export const documentService = {
             .eq('user_id', userId)
             .single();
 
-        // Delete from database
+        // Delete from database first
         const { error: dbError } = await supabase
             .from('documents')
             .delete()
@@ -139,13 +163,28 @@ export const documentService = {
 
         if (dbError) throw dbError;
 
-        // Delete file from storage if exists
+        // Delete file from storage bucket 'documents' if exists
         if (doc?.file_url) {
-            const fileName = doc.file_url.split('/').pop();
-            if (fileName) {
-                await supabase.storage
-                    .from('documents')
-                    .remove([`${userId}/${fileName}`]);
+            try {
+                // Extract the storage path from the public URL
+                // Public URL format: https://[project].supabase.co/storage/v1/object/public/documents/[userId]/[timestamp].[ext]
+                const urlParts = doc.file_url.split('/documents/');
+                if (urlParts.length > 1) {
+                    const storagePath = urlParts[1]; // This is userId/timestamp.ext
+                    
+                    // Delete from 'documents' bucket
+                    const { error: storageError } = await supabase.storage
+                        .from('documents')
+                        .remove([storagePath]);
+                    
+                    if (storageError) {
+                        console.error('Error deleting file from storage:', storageError);
+                        // Don't throw - file might already be deleted
+                    }
+                }
+            } catch (err) {
+                console.error('Error processing storage deletion:', err);
+                // Continue even if storage deletion fails
             }
         }
 
