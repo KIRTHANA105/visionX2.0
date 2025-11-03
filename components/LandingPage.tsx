@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useLanguage } from '../i18n/LanguageProvider';
 import LanguageSwitcher from './LanguageSwitcher';
-import ApiKeyNotice from './ApiKeyNotice';
 import { ArrowRightIcon } from './icons';
 import Login from './Login';
 import Register from './Register';
@@ -46,9 +45,6 @@ const LandingPage = ({ onLogin }: LandingPageProps) => {
                 </div>
             </header>
 
-            <div className="mt-20 w-full max-w-4xl">
-                <ApiKeyNotice />
-            </div>
             
             <main className="flex flex-col justify-center items-center">
                 <h1 className="text-4xl md:text-6xl font-bold text-brand-primary dark:text-white max-w-4xl">

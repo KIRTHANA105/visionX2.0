@@ -6,7 +6,6 @@ import LegalQA from './LegalQA';
 import { DocumentIcon, ChatIcon, LogoutIcon, HistoryIcon } from './icons';
 import LanguageSwitcher from './LanguageSwitcher';
 import { useLanguage } from '../i18n/LanguageProvider';
-import ApiKeyNotice from './ApiKeyNotice';
 
 interface DashboardProps {
     onLogout: () => void;
@@ -64,9 +63,6 @@ const Dashboard = ({ onLogout, userId }: DashboardProps) => {
             </header>
 
             <main className="container mx-auto p-4 md:p-6">
-                <div className="mb-4">
-                    <ApiKeyNotice />
-                </div>
                 <div className="w-full max-w-7xl mx-auto">
                     <div className="flex border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
                         <TabButton 
