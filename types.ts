@@ -4,9 +4,12 @@ export interface AnalysisResult {
   cons: string[];
   potentialLoopholes: string[];
   potentialChallenges: string[];
+  // Optional fields: model may provide these directly. If absent, UI will infer heuristics.
+  isLegal?: boolean;
+  authenticity?: "real" | "fake" | "unknown";
 }
 
 export interface ChatMessage {
-  role: 'user' | 'model';
+  role: "user" | "model";
   parts: { text: string }[];
 }
