@@ -1,13 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Chat } from '@google/genai';
-import { ai } from '../services/geminiService';
+import { getAiClient } from '../services/geminiService';
 import { chatService } from '../services/supabaseService';
 import type { ChatMessage } from '../types';
 import { SendIcon } from './icons';
 import Disclaimer from './Disclaimer';
 import LoadingSpinner from './LoadingSpinner';
+import { useLanguage } from '../i18n/LanguageProvider';
 
-const systemInstruction = `You are LexiGem, an AI-powered legal assistant. Your goal is to help everyday users understand general legal topics. Answer questions about legal terms, user rights, or general law-related topics in a clear, simple, and conversational manner. You can also provide short summaries of recent court rulings if relevant. IMPORTANT: You are an educational tool and not a certified lawyer. At the end of every single response, you MUST include the mandatory disclaimer about this not being legal advice. Do not wait to be reminded.`;
+const buildSystemInstruction = (languageName: string) =>
+    `You are LexiGem, an AI-powered legal assistant. Your goal is to help everyday users understand general legal topics. Answer questions about legal terms, user rights, or general law-related topics in a clear, simple, and conversational manner.
+IMPORTANT: You are an educational tool and not a certified lawyer.
+CRITICAL: Respond in ${languageName} only. Append a short disclaimer in ${languageName} at the end stating that the response is not legal advice.`;
 
 interface LegalQAProps {
     userId: string;
@@ -24,6 +28,7 @@ const LegalQA = ({ userId, loadSessionId, onSessionLoaded }: LegalQAProps) => {
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
     const chatContainerRef = useRef<HTMLDivElement>(null);
+    const { language, languageNames, t } = useLanguage();
 
     useEffect(() => {
         const initChat = async () => {
@@ -44,9 +49,9 @@ const LegalQA = ({ userId, loadSessionId, onSessionLoaded }: LegalQAProps) => {
                         parts: [{ text: msg.parts[0].text }]
                     }));
 
-                    const newChat = ai.chats.create({
+                    const newChat = getAiClient().chats.create({
                         model: 'gemini-2.5-pro',
-                        config: { systemInstruction: systemInstruction },
+                        config: { systemInstruction: buildSystemInstruction(languageNames[language]) },
                         history: geminiHistory.slice(0, -1),
                     });
                     setChat(newChat);
@@ -73,16 +78,16 @@ const LegalQA = ({ userId, loadSessionId, onSessionLoaded }: LegalQAProps) => {
                     console.error('Error creating chat session:', err);
                 }
 
-                const newChat = ai.chats.create({
+                const newChat = getAiClient().chats.create({
                     model: 'gemini-2.5-pro',
-                    config: { systemInstruction: systemInstruction },
+                    config: { systemInstruction: buildSystemInstruction(languageNames[language]) },
                     history: [],
                 });
                 setChat(newChat);
             }
         };
         initChat();
-    }, [userId, loadSessionId]);
+    }, [userId, loadSessionId, language]);
 
     useEffect(() => {
         if (chatContainerRef.current) {
@@ -117,8 +122,21 @@ const LegalQA = ({ userId, loadSessionId, onSessionLoaded }: LegalQAProps) => {
                 }
             }
 
-            // Send to AI and get streaming response
-            const stream = await chat.sendMessageStream({ message: userMessageText });
+            // Send to AI and get streaming response with simple retry on rate limit
+            const tryStream = async () => {
+                try {
+                    return await chat.sendMessageStream({ message: userMessageText });
+                } catch (e: any) {
+                    const msg = (e instanceof Error ? e.message : String(e)) || '';
+                    if ((/quota|rate|429/i).test(msg)) {
+                        // brief backoff then retry once
+                        await new Promise(r => setTimeout(r, 1200));
+                        return await chat.sendMessageStream({ message: userMessageText });
+                    }
+                    throw e;
+                }
+            };
+            const stream = await tryStream();
             let modelResponseText = '';
             setMessages(prev => [...prev, { role: 'model', parts: [{ text: '' }] }]);
 
@@ -186,11 +204,12 @@ const LegalQA = ({ userId, loadSessionId, onSessionLoaded }: LegalQAProps) => {
                 )}
                  {!messages.length && (
                     <div className="text-center text-gray-500 dark:text-gray-400">
-                        <p>Ask me anything about legal terms, contracts, or user rights.</p>
-                        <p className="text-sm mt-2">For example: "What is an NDA?" or "Explain intellectual property".</p>
+                        <p>{t('qa.empty.line1')}</p>
+                        <p className="text-sm mt-2">{t('qa.empty.line2')}</p>
                     </div>
                  )}
             </div>
+            <Disclaimer />
             
             {error && <div className="mt-2 p-2 text-sm bg-red-100 text-red-700 rounded-lg">{error}</div>}
 
@@ -199,7 +218,7 @@ const LegalQA = ({ userId, loadSessionId, onSessionLoaded }: LegalQAProps) => {
                     type="text"
                     value={userInput}
                     onChange={(e) => setUserInput(e.target.value)}
-                    placeholder="Ask a legal question..."
+                    placeholder={t('qa.placeholder')}
                     className="flex-1 p-3 border border-gray-300 dark:border-gray-600 rounded-full shadow-sm focus:ring-2 focus:ring-brand-secondary focus:border-brand-secondary transition duration-150 bg-white dark:bg-slate-800 dark:text-gray-200"
                     disabled={isLoading}
                 />

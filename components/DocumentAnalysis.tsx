@@ -4,6 +4,7 @@ import { documentService } from "../services/supabaseService";
 import type { AnalysisResult } from "../types";
 import LoadingSpinner from "./LoadingSpinner";
 import Disclaimer from "./Disclaimer";
+import { useLanguage } from "../i18n/LanguageProvider";
 import {
   ShieldCheckIcon,
   ExclamationCircleIcon,
@@ -95,6 +96,7 @@ const inferAuthenticity = (result: AnalysisResult) => {
 
 const BadgeLegal = ({ analysis }: { analysis: AnalysisResult }) => {
   const isLegal = inferIsLegal(analysis);
+  const { t } = useLanguage();
   return (
     <span
       className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
@@ -108,19 +110,20 @@ const BadgeLegal = ({ analysis }: { analysis: AnalysisResult }) => {
       ) : (
         <ExclamationCircleIcon className="w-4 h-4 mr-2 text-yellow-600" />
       )}
-      {isLegal ? "Likely Legal" : "Not Clearly Legal"}
+      {isLegal ? t('analysis.badge.legal.true') : t('analysis.badge.legal.false')}
     </span>
   );
 };
 
 const BadgeAuthenticity = ({ analysis }: { analysis: AnalysisResult }) => {
   const auth = inferAuthenticity(analysis);
+  const { t } = useLanguage();
   const label =
     auth === "real"
-      ? "Likely Real"
+      ? t('analysis.badge.auth.real')
       : auth === "fake"
-      ? "Likely Fake"
-      : "Unknown";
+      ? t('analysis.badge.auth.fake')
+      : t('analysis.badge.auth.unknown');
   const classes =
     auth === "real"
       ? "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300"
@@ -156,6 +159,7 @@ const DocumentAnalysis = ({ userId }: DocumentAnalysisProps) => {
   const [error, setError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { t, language, languageNames } = useLanguage();
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
@@ -165,7 +169,25 @@ const DocumentAnalysis = ({ userId }: DocumentAnalysisProps) => {
 
   const handleAnalyze = async () => {
     if (!selectedFile) {
-      setError("Please upload a document to analyze.");
+      setError(t('analysis.error.noFile'));
+      return;
+    }
+    // Basic validation to reduce model failures
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'image/png',
+      'image/jpeg',
+      'image/webp'
+    ];
+    if (!allowedTypes.includes(selectedFile.type)) {
+      setError('Unsupported file type. Please upload PDF, DOCX, PNG, or JPG.');
+      return;
+    }
+    const maxBytes = 12 * 1024 * 1024; // ~12MB to keep request size reasonable
+    if (selectedFile.size > maxBytes) {
+      setError('File too large. Please upload a file smaller than 12MB.');
       return;
     }
     setIsLoading(true);
@@ -175,7 +197,7 @@ const DocumentAnalysis = ({ userId }: DocumentAnalysisProps) => {
 
     try {
       // Step 1: Analyze document with Gemini
-      const result = await analyzeDocument(selectedFile);
+      const result = await analyzeDocument(selectedFile, languageNames[language]);
       setAnalysisResult(result);
 
       // Step 2: Upload file to Supabase Storage
@@ -212,7 +234,7 @@ const DocumentAnalysis = ({ userId }: DocumentAnalysisProps) => {
           htmlFor="document-upload"
           className="block text-lg font-medium text-brand-dark dark:text-gray-200 mb-2"
         >
-          Upload your legal document
+          {t('analysis.uploadLabel')}
         </label>
         <div
           className="flex justify-center items-center w-full px-6 py-10 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-slate-800/50 hover:border-brand-secondary dark:hover:border-brand-secondary transition-colors cursor-pointer"
@@ -222,16 +244,14 @@ const DocumentAnalysis = ({ userId }: DocumentAnalysisProps) => {
             <UploadIcon className="mx-auto h-12 w-12 text-gray-400" />
             <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
               <span className="font-semibold text-brand-secondary">
-                Click to upload
+                {t('analysis.browse')}
               </span>{" "}
-              or drag and drop
+              {t('analysis.or')}
             </p>
-            <p className="text-xs text-gray-500 dark:text-gray-500">
-              PDF, DOCX, PNG, or JPG
-            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-500">PDF, DOCX, PNG, JPG</p>
             {selectedFile && (
               <p className="mt-4 text-sm font-medium text-brand-dark dark:text-gray-300">
-                Selected: {selectedFile.name}
+                {selectedFile.name}
               </p>
             )}
           </div>
@@ -253,7 +273,7 @@ const DocumentAnalysis = ({ userId }: DocumentAnalysisProps) => {
           disabled={isLoading || !selectedFile}
           className="px-8 py-3 bg-brand-secondary text-white font-bold rounded-lg shadow-md hover:bg-sky-600 focus:outline-none focus:ring-4 focus:ring-sky-300 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-300 ease-in-out transform hover:scale-105"
         >
-          {isLoading ? "Analyzing..." : "Analyze Document"}
+          {isLoading ? "..." : t('analysis.analyze')}
         </button>
       </div>
 
@@ -267,30 +287,24 @@ const DocumentAnalysis = ({ userId }: DocumentAnalysisProps) => {
 
       {saveSuccess && (
         <div className="p-4 bg-green-100 text-green-700 border border-green-300 rounded-lg dark:bg-green-900/20 dark:border-green-700 dark:text-green-300">
-          ✓ Document analyzed and saved successfully!
+          ✓ {t('analysis.savingSuccess')}
         </div>
       )}
 
       {analysisResult && (
         <div className="space-y-6 animate-fade-in">
           <div className="p-6 bg-white dark:bg-slate-800 rounded-lg shadow-md">
-            <h2 className="text-2xl font-bold text-brand-dark dark:text-white mb-3">
-              Analysis Summary
-            </h2>
+            <h2 className="text-2xl font-bold text-brand-dark dark:text-white mb-3">{t('analysis.section.summary')}</h2>
 
             {/* Info row: Legal? Authenticity? */}
             <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="flex items-center space-x-3">
-                <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
-                  Document Type:
-                </span>
+                <span className="text-sm font-medium text-gray-600 dark:text-gray-300">&nbsp;</span>
                 <BadgeLegal analysis={analysisResult} />
               </div>
 
               <div className="flex items-center space-x-3">
-                <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
-                  Authenticity:
-                </span>
+                <span className="text-sm font-medium text-gray-600 dark:text-gray-300">&nbsp;</span>
                 <BadgeAuthenticity analysis={analysisResult} />
               </div>
             </div>
@@ -300,49 +314,39 @@ const DocumentAnalysis = ({ userId }: DocumentAnalysisProps) => {
             </p>
             {/* Explicit authenticity section */}
             <div className="mt-4 p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-slate-900">
-              <h3 className="text-lg font-semibold text-brand-dark dark:text-white mb-2">
-                Authenticity Check
-              </h3>
+              <h3 className="text-lg font-semibold text-brand-dark dark:text-white mb-2">&nbsp;</h3>
               <div className="flex items-center justify-between sm:justify-start sm:gap-6">
                 <div className="flex items-center space-x-4">
                   <div className="text-sm">
                     <div className="text-base font-bold">
                       <BadgeAuthenticity analysis={analysisResult} />
                     </div>
-                    <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                      {analysisResult.authenticity
-                        ? "Determined by model."
-                        : "Determined by heuristic analysis of the document content."}
-                    </div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">&nbsp;</div>
                   </div>
                 </div>
-                <div className="hidden sm:block text-sm text-gray-600 dark:text-gray-400">
-                  Note: This is an automated assessment and not a legal
-                  verification. For critical matters, consult a qualified
-                  professional.
-                </div>
+                <div className="hidden sm:block text-sm text-gray-600 dark:text-gray-400">&nbsp;</div>
               </div>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <AnalysisSection
-              title="Pros"
+              title={t('analysis.section.pros')}
               items={analysisResult.pros}
               icon={<ShieldCheckIcon className="w-6 h-6 text-green-500" />}
             />
             <AnalysisSection
-              title="Cons"
+              title={t('analysis.section.cons')}
               items={analysisResult.cons}
               icon={<ExclamationCircleIcon className="w-6 h-6 text-red-500" />}
             />
             <AnalysisSection
-              title="Potential Loopholes"
+              title={t('analysis.section.loopholes')}
               items={analysisResult.potentialLoopholes}
               icon={<LightbulbIcon className="w-6 h-6 text-yellow-500" />}
             />
             <AnalysisSection
-              title="Potential Challenges"
+              title={t('analysis.section.challenges')}
               items={analysisResult.potentialChallenges}
               icon={<BalanceScaleIcon className="w-6 h-6 text-blue-500" />}
             />

@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import { useLanguage } from '../i18n/LanguageProvider';
+import LanguageSwitcher from './LanguageSwitcher';
+import ApiKeyNotice from './ApiKeyNotice';
 import { ArrowRightIcon } from './icons';
 import Login from './Login';
 import Register from './Register';
@@ -10,6 +13,7 @@ interface LandingPageProps {
 const LandingPage = ({ onLogin }: LandingPageProps) => {
     const [showLogin, setShowLogin] = useState(false);
     const [showRegister, setShowRegister] = useState(false);
+    const { t } = useLanguage();
 
     if (showLogin) {
         return <Login onLoginSuccess={onLogin} onSwitchToRegister={() => { setShowLogin(false); setShowRegister(true); }} />;
@@ -25,21 +29,26 @@ const LandingPage = ({ onLogin }: LandingPageProps) => {
                 <div className="text-xl font-bold text-brand-primary dark:text-white">
                     Lexi<span className="text-brand-secondary">Gem</span>
                 </div>
-                <div className="space-x-2 md:space-x-4">
+                <div className="flex items-center space-x-3 md:space-x-4">
+                    <LanguageSwitcher />
                     <button
                         onClick={() => setShowLogin(true)}
                         className="px-4 py-2 text-sm font-semibold text-brand-primary dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 transition-colors"
                     >
-                        Login
+                        {t('common.login')}
                     </button>
                     <button
                         onClick={() => setShowRegister(true)}
                         className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                     >
-                        Sign Up
+                        {t('common.signup')}
                     </button>
                 </div>
             </header>
+
+            <div className="mt-20 w-full max-w-4xl">
+                <ApiKeyNotice />
+            </div>
             
             <main className="flex flex-col justify-center items-center">
                 <h1 className="text-4xl md:text-6xl font-bold text-brand-primary dark:text-white max-w-4xl">

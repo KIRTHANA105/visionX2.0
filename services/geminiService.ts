@@ -1,11 +1,31 @@
 import { GoogleGenAI, Type, Part } from "@google/genai";
 import { AnalysisResult } from "../types";
 
-if (!process.env.API_KEY) {
-  throw new Error("API_KEY environment variable not set");
+function resolveApiKey(): string | null {
+  // Prefer Vite env var, then window scoped, then localStorage
+  const viteKey = (import.meta as any)?.env?.VITE_GEMINI_API_KEY as string | undefined;
+  if (viteKey && viteKey.trim()) return viteKey.trim();
+  const windowKey = (globalThis as any)?.API_KEY as string | undefined;
+  if (windowKey && windowKey.trim()) return windowKey.trim();
+  try {
+    const stored = localStorage.getItem('GEMINI_API_KEY');
+    if (stored && stored.trim()) return stored.trim();
+  } catch {}
+  return null;
 }
+let cachedClientKey: string | null = null;
+let cachedAi: GoogleGenAI | null = null;
 
-export const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+export function getAiClient(): GoogleGenAI {
+  const key = resolveApiKey();
+  if (!key) {
+    throw new Error("Missing API key. Please configure VITE_GEMINI_API_KEY (or window.API_KEY / localStorage.GEMINI_API_KEY) and reload.");
+  }
+  if (cachedAi && cachedClientKey === key) return cachedAi;
+  cachedClientKey = key;
+  cachedAi = new GoogleGenAI({ apiKey: key });
+  return cachedAi;
+}
 
 const analysisSchema = {
   type: Type.OBJECT,
@@ -73,10 +93,13 @@ async function fileToGenerativePart(file: File): Promise<Part> {
   };
 }
 
-export const analyzeDocument = async (file: File): Promise<AnalysisResult> => {
+export const analyzeDocument = async (file: File, responseLanguageName: string = 'English'): Promise<AnalysisResult> => {
+  const ai = getAiClient();
   const model = "gemini-2.5-pro";
 
   const prompt = `You are LexiGem, an expert AI legal analyst. Your task is to analyze the attached legal document (e.g., contract, agreement, NDA, policy). Provide a structured analysis in simple, easy-to-understand language for a non-lawyer.
+
+  IMPORTANT: Respond only in ${responseLanguageName}. The JSON string values must be written in ${responseLanguageName}.
 
   Based on the document, provide a detailed analysis covering:
   1.  **Summary:** A brief overview of the document's purpose and key terms.
@@ -87,27 +110,54 @@ export const analyzeDocument = async (file: File): Promise<AnalysisResult> => {
   
   Please provide the output in the specified JSON format.`;
 
+  const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+  const isRateLimited = (msg: string) => /quota|rate|429|resource exhausted/i.test(msg);
+
   try {
     const filePart = await fileToGenerativePart(file);
     const contents = { parts: [{ text: prompt }, filePart] };
 
-    const response = await ai.models.generateContent({
-      model: model,
-      contents: contents,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: analysisSchema,
-      },
-    });
-
-    const jsonText = response.text.trim();
-    const cleanedJson = jsonText.replace(/^```json\s*|```$/g, "");
-    const parsedResult: AnalysisResult = JSON.parse(cleanedJson);
-    return parsedResult;
+    let lastErr: any = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const response = await ai.models.generateContent({
+          model: model,
+          contents: contents,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: analysisSchema,
+          },
+        });
+        const jsonText = (response as any)?.text?.trim?.() ?? "";
+        if (!jsonText) throw new Error("Empty response from AI model.");
+        const cleanedJson = jsonText.replace(/^```json\s*|```$/g, "");
+        const parsedResult: AnalysisResult = JSON.parse(cleanedJson);
+        return parsedResult;
+      } catch (err: any) {
+        lastErr = err;
+        const msg = (err instanceof Error ? err.message : String(err)) || '';
+        if (isRateLimited(msg) && attempt < 2) {
+          // exponential backoff: 1s, 2s
+          await sleep(1000 * Math.pow(2, attempt));
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw lastErr ?? new Error('Unknown error');
   } catch (error) {
     console.error("Error analyzing document with Gemini:", error);
-    throw new Error(
-      "Failed to analyze the document. The AI model could not process the request. Please ensure you've uploaded a clear document (PDF, DOCX, PNG, JPG)."
-    );
+    const message = error instanceof Error ? error.message : String(error);
+    // Surface common helpful hints
+    if (message.includes('API key') || message.includes('Missing API key')) {
+      throw new Error("Missing API key for Gemini. Set VITE_GEMINI_API_KEY and restart the app.");
+    }
+    if (message.toLowerCase().includes('quota') || message.toLowerCase().includes('rate') || message.includes('429')) {
+      throw new Error("Model quota/rate limit reached. Retried automatically; please try again in a moment or adjust your quota.");
+    }
+    if (message.toLowerCase().includes('unsupported') || message.toLowerCase().includes('mime')) {
+      throw new Error("Unsupported file type. Please upload PDF, DOCX, PNG, or JPG.");
+    }
+    throw new Error("Failed to analyze the document. The AI model could not process the request. Please ensure you've uploaded a clear document (PDF, DOCX, PNG, JPG).");
   }
 };

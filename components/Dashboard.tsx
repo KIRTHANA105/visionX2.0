@@ -4,6 +4,9 @@ import DocumentHistory from './DocumentHistory';
 import ChatHistory from './ChatHistory';
 import LegalQA from './LegalQA';
 import { DocumentIcon, ChatIcon, LogoutIcon, HistoryIcon } from './icons';
+import LanguageSwitcher from './LanguageSwitcher';
+import { useLanguage } from '../i18n/LanguageProvider';
+import ApiKeyNotice from './ApiKeyNotice';
 
 interface DashboardProps {
     onLogout: () => void;
@@ -15,6 +18,7 @@ type ActiveTab = 'analysis' | 'history' | 'chathistory' | 'qa';
 const Dashboard = ({ onLogout, userId }: DashboardProps) => {
     const [activeTab, setActiveTab] = useState<ActiveTab>('analysis');
     const [loadChatSessionId, setLoadChatSessionId] = useState<string | null>(null);
+    const { t } = useLanguage();
 
     const TabButton = ({ tabName, label, icon }: { tabName: ActiveTab; label: string; icon: React.ReactNode }) => (
         <button
@@ -41,44 +45,48 @@ const Dashboard = ({ onLogout, userId }: DashboardProps) => {
                         Lexi<span className="text-brand-secondary">Gem</span>
                     </div>
                     <div className="flex items-center space-x-4">
+                        <LanguageSwitcher />
                         <button 
                             onClick={() => setActiveTab('analysis')}
                             className="text-sm font-semibold text-gray-600 dark:text-gray-300 hover:text-brand-secondary dark:hover:text-brand-secondary transition-colors"
                         >
-                            Dashboard
+                            {t('common.dashboard')}
                         </button>
                         <button
                             onClick={onLogout}
                             className="flex items-center px-3 py-2 text-sm font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 rounded-md transition-colors"
                         >
                             <LogoutIcon className="w-4 h-4 mr-2" />
-                            Logout
+                            {t('common.logout')}
                         </button>
                     </div>
                 </div>
             </header>
 
             <main className="container mx-auto p-4 md:p-6">
+                <div className="mb-4">
+                    <ApiKeyNotice />
+                </div>
                 <div className="w-full max-w-7xl mx-auto">
                     <div className="flex border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
                         <TabButton 
                             tabName="analysis" 
-                            label="Legal Analysis" 
+                            label={t('tabs.analysis')} 
                             icon={<DocumentIcon className="w-5 h-5" />}
                         />
                         <TabButton 
                             tabName="history" 
-                            label="Documents" 
+                            label={t('tabs.documents')} 
                             icon={<HistoryIcon className="w-5 h-5" />}
                         />
                         <TabButton 
                             tabName="chathistory" 
-                            label="Chat History" 
+                            label={t('tabs.chatHistory')} 
                             icon={<ChatIcon className="w-5 h-5" />}
                         />
                         <TabButton 
                             tabName="qa" 
-                            label="Legal Q&A"
+                            label={t('tabs.qa')}
                             icon={<ChatIcon className="w-5 h-5" />}
                         />
                     </div>
