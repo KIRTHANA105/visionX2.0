@@ -1,11 +1,11 @@
 import { GoogleGenAI, Type, Part } from "@google/genai";
 import { AnalysisResult } from "../types";
 
-if (!process.env.API_KEY) {
-  throw new Error("API_KEY environment variable not set");
+if (!process.env.GEMINI_API_KEY) {
+  throw new Error("GEMINI_API_KEY environment variable not set");
 }
 
-export const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+export const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 const analysisSchema = {
   type: Type.OBJECT,

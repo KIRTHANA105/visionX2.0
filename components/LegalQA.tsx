@@ -1,13 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Chat } from '@google/genai';
 import { ai } from '../services/geminiService';
-import { chatService } from '../services/supabaseService';
+import { chatService, documentService } from '../services/supabaseService';
 import type { ChatMessage } from '../types';
 import { SendIcon } from './icons';
 import Disclaimer from './Disclaimer';
 import LoadingSpinner from './LoadingSpinner';
 
-const systemInstruction = `You are LexiGem, an AI-powered legal assistant. Your goal is to help everyday users understand general legal topics. Answer questions about legal terms, user rights, or general law-related topics in a clear, simple, and conversational manner. You can also provide short summaries of recent court rulings if relevant. IMPORTANT: You are an educational tool and not a certified lawyer. At the end of every single response, you MUST include the mandatory disclaimer about this not being legal advice. Do not wait to be reminded.`;
+const systemInstruction = `You are LexiGem, an AI-powered legal assistant. Your goal is to help everyday users understand general legal topics and analyze their legal documents. When a document is selected, analyze and refer to its content in your responses. Answer questions about legal terms, user rights, or general law-related topics in a clear, simple, and conversational manner. You can also provide short summaries of recent court rulings if relevant. IMPORTANT: You are an educational tool and not a certified lawyer. At the end of every single response, you MUST include the mandatory disclaimer about this not being legal advice. Do not wait to be reminded.`;
+
+interface Document {
+    id: string;
+    file_name: string;
+    summary: string;
+    file_url: string;
+    created_at: string;
+}
 
 interface LegalQAProps {
     userId: string;
@@ -23,7 +31,22 @@ const LegalQA = ({ userId, loadSessionId, onSessionLoaded }: LegalQAProps) => {
     const [error, setError] = useState<string | null>(null);
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+    const [documents, setDocuments] = useState<Document[]>([]);
+    const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
     const chatContainerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        // Load user's documents
+        const loadDocuments = async () => {
+            try {
+                const userDocs = await documentService.getUserDocuments(userId);
+                setDocuments(userDocs);
+            } catch (err) {
+                console.error('Error loading documents:', err);
+            }
+        };
+        loadDocuments();
+    }, [userId]);
 
     useEffect(() => {
         const initChat = async () => {
@@ -102,7 +125,13 @@ const LegalQA = ({ userId, loadSessionId, onSessionLoaded }: LegalQAProps) => {
         setError(null);
 
         try {
-            // Save user message to database
+            // Prepare message context with selected document if any
+            let messageWithContext = userMessageText;
+            if (selectedDocument) {
+                messageWithContext = `Context: Analyzing document "${selectedDocument.file_name}"\nDocument Summary: ${selectedDocument.summary}\n\nUser Question: ${userMessageText}`;
+            }
+
+            // Save user message to database (original message without context)
             await chatService.saveMessage(userId, sessionId, 'user', userMessageText);
 
             // Update session title if this is the first message
@@ -118,7 +147,7 @@ const LegalQA = ({ userId, loadSessionId, onSessionLoaded }: LegalQAProps) => {
             }
 
             // Send to AI and get streaming response
-            const stream = await chat.sendMessageStream({ message: userMessageText });
+            const stream = await chat.sendMessageStream({ message: messageWithContext });
             let modelResponseText = '';
             setMessages(prev => [...prev, { role: 'model', parts: [{ text: '' }] }]);
 
@@ -164,6 +193,30 @@ const LegalQA = ({ userId, loadSessionId, onSessionLoaded }: LegalQAProps) => {
 
     return (
         <div className="flex flex-col h-[85vh] p-4 md:p-6 bg-gray-50 dark:bg-slate-900">
+            {/* Document selector */}
+            <div className="mb-4">
+                <select
+                    value={selectedDocument?.id || ''}
+                    onChange={(e) => {
+                        const doc = documents.find(d => d.id === e.target.value);
+                        setSelectedDocument(doc || null);
+                    }}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:ring-2 focus:ring-brand-secondary focus:border-brand-secondary bg-white dark:bg-slate-800 dark:text-gray-200"
+                >
+                    <option value="">Select a document to analyze (optional)</option>
+                    {documents.map((doc) => (
+                        <option key={doc.id} value={doc.id}>
+                            {doc.file_name}
+                        </option>
+                    ))}
+                </select>
+                {selectedDocument && (
+                    <div className="mt-2 p-2 bg-gray-100 dark:bg-slate-700 rounded-lg text-sm">
+                        <p className="font-medium">Selected document summary:</p>
+                        <p className="text-gray-600 dark:text-gray-300">{selectedDocument.summary}</p>
+                    </div>
+                )}
+            </div>
             <div ref={chatContainerRef} className="flex-1 overflow-y-auto space-y-4 p-4 rounded-lg bg-white dark:bg-slate-800 shadow-inner">
                 {messages.map((msg, index) => (
                     <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
