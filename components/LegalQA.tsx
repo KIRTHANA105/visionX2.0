@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Chat } from '@google/genai';
 import { getAiClient } from '../services/geminiService';
-import { chatService } from '../services/supabaseService';
+import { chatService, documentService } from '../services/supabaseService';
 import type { ChatMessage } from '../types';
 import { SendIcon } from './icons';
 import Disclaimer from './Disclaimer';
@@ -27,8 +27,23 @@ const LegalQA = ({ userId, loadSessionId, onSessionLoaded }: LegalQAProps) => {
     const [error, setError] = useState<string | null>(null);
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+    const [documents, setDocuments] = useState<Array<{ id: string; file_name: string; summary: string }>>([]);
+    const [selectedDocumentId, setSelectedDocumentId] = useState<string>('');
     const chatContainerRef = useRef<HTMLDivElement>(null);
     const { language, languageNames, t } = useLanguage();
+
+    // Load user's analyzed documents for context selection
+    useEffect(() => {
+        const loadDocuments = async () => {
+            try {
+                const docs = await documentService.getUserDocuments(userId);
+                setDocuments(docs?.map((d: any) => ({ id: d.id, file_name: d.file_name, summary: d.summary })) || []);
+            } catch (err) {
+                console.error('Error loading documents:', err);
+            }
+        };
+        loadDocuments();
+    }, [userId]);
 
     useEffect(() => {
         const initChat = async () => {
@@ -107,7 +122,14 @@ const LegalQA = ({ userId, loadSessionId, onSessionLoaded }: LegalQAProps) => {
         setError(null);
 
         try {
-            // Save user message to database
+            // Build contextualized message if a document is selected
+            let messageToSend = userMessageText;
+            const selectedDoc = documents.find(d => d.id === selectedDocumentId);
+            if (selectedDoc) {
+                messageToSend = `Context: You have access to an analyzed document.\nTitle: ${selectedDoc.file_name}\nSummary: ${selectedDoc.summary}\n\nUser Question: ${userMessageText}`;
+            }
+
+            // Save user message (original) to database
             await chatService.saveMessage(userId, sessionId, 'user', userMessageText);
 
             // Update session title if this is the first message
@@ -125,13 +147,13 @@ const LegalQA = ({ userId, loadSessionId, onSessionLoaded }: LegalQAProps) => {
             // Send to AI and get streaming response with simple retry on rate limit
             const tryStream = async () => {
                 try {
-                    return await chat.sendMessageStream({ message: userMessageText });
+                    return await chat.sendMessageStream({ message: messageToSend });
                 } catch (e: any) {
                     const msg = (e instanceof Error ? e.message : String(e)) || '';
                     if ((/quota|rate|429/i).test(msg)) {
                         // brief backoff then retry once
                         await new Promise(r => setTimeout(r, 1200));
-                        return await chat.sendMessageStream({ message: userMessageText });
+                        return await chat.sendMessageStream({ message: messageToSend });
                     }
                     throw e;
                 }
@@ -183,6 +205,31 @@ const LegalQA = ({ userId, loadSessionId, onSessionLoaded }: LegalQAProps) => {
 
     return (
         <div className="flex flex-col h-[85vh] p-4 md:p-6 bg-gray-50 dark:bg-slate-900">
+            {/* Optional: choose a document to provide context to the AI */}
+            {documents.length > 0 && (
+                <div className="mb-3">
+                    <select
+                        value={selectedDocumentId}
+                        onChange={(e) => setSelectedDocumentId(e.target.value)}
+                        className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:ring-2 focus:ring-brand-secondary focus:border-brand-secondary bg-white dark:bg-slate-800 dark:text-gray-200"
+                    >
+                        <option value="">{`Select a document to reference (optional)`}</option>
+                        {documents.map((doc) => (
+                            <option key={doc.id} value={doc.id}>
+                                {doc.file_name}
+                            </option>
+                        ))}
+                    </select>
+                    {selectedDocumentId && (
+                        <div className="mt-2 p-2 bg-gray-100 dark:bg-slate-700 rounded-lg text-sm">
+                            <p className="font-medium">Selected document summary:</p>
+                            <p className="text-gray-600 dark:text-gray-300">
+                                {documents.find(d => d.id === selectedDocumentId)?.summary}
+                            </p>
+                        </div>
+                    )}
+                </div>
+            )}
             <div ref={chatContainerRef} className="flex-1 overflow-y-auto space-y-4 p-4 rounded-lg bg-white dark:bg-slate-800 shadow-inner">
                 {messages.map((msg, index) => (
                     <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
