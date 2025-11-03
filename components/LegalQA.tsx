@@ -1,31 +1,88 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Chat } from '@google/genai';
 import { ai } from '../services/geminiService';
+import { chatService } from '../services/supabaseService';
 import type { ChatMessage } from '../types';
 import { SendIcon } from './icons';
 import Disclaimer from './Disclaimer';
+import LoadingSpinner from './LoadingSpinner';
 
 const systemInstruction = `You are LexiGem, an AI-powered legal assistant. Your goal is to help everyday users understand general legal topics. Answer questions about legal terms, user rights, or general law-related topics in a clear, simple, and conversational manner. You can also provide short summaries of recent court rulings if relevant. IMPORTANT: You are an educational tool and not a certified lawyer. At the end of every single response, you MUST include the mandatory disclaimer about this not being legal advice. Do not wait to be reminded.`;
 
-const LegalQA = () => {
+interface LegalQAProps {
+    userId: string;
+    loadSessionId?: string | null;
+    onSessionLoaded?: () => void;
+}
+
+const LegalQA = ({ userId, loadSessionId, onSessionLoaded }: LegalQAProps) => {
     const [chat, setChat] = useState<Chat | null>(null);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [userInput, setUserInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [sessionId, setSessionId] = useState<string | null>(null);
+    const [isLoadingHistory, setIsLoadingHistory] = useState(false);
     const chatContainerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        const initChat = () => {
-            const newChat = ai.chats.create({
-                model: 'gemini-2.5-pro',
-                config: { systemInstruction: systemInstruction },
-                history: [],
-            });
-            setChat(newChat);
+        const initChat = async () => {
+            if (loadSessionId) {
+                // Load existing session
+                setIsLoadingHistory(true);
+                try {
+                    const history = await chatService.getChatHistory(loadSessionId, userId);
+                    const historyMessages: ChatMessage[] = history.map((msg: any) => ({
+                        role: msg.role as 'user' | 'model',
+                        parts: [{ text: msg.message }]
+                    }));
+                    setMessages(historyMessages);
+
+                    // Rebuild chat history for Gemini
+                    const geminiHistory = historyMessages.map(msg => ({
+                        role: msg.role === 'user' ? 'user' : 'model',
+                        parts: [{ text: msg.parts[0].text }]
+                    }));
+
+                    const newChat = ai.chats.create({
+                        model: 'gemini-2.5-pro',
+                        config: { systemInstruction: systemInstruction },
+                        history: geminiHistory.slice(0, -1),
+                    });
+                    setChat(newChat);
+                    setSessionId(loadSessionId);
+                    
+                    if (onSessionLoaded) {
+                        onSessionLoaded();
+                    }
+                } catch (err) {
+                    console.error('Error loading chat history:', err);
+                    setError('Failed to load conversation history');
+                } finally {
+                    setIsLoadingHistory(false);
+                }
+            } else {
+                // Generate a new session ID
+                const newSessionId = crypto.randomUUID();
+                setSessionId(newSessionId);
+
+                // Create chat session in database
+                try {
+                    await chatService.createChatSession(userId, newSessionId);
+                } catch (err) {
+                    console.error('Error creating chat session:', err);
+                }
+
+                const newChat = ai.chats.create({
+                    model: 'gemini-2.5-pro',
+                    config: { systemInstruction: systemInstruction },
+                    history: [],
+                });
+                setChat(newChat);
+            }
         };
         initChat();
-    }, []);
+    }, [userId, loadSessionId]);
 
     useEffect(() => {
         if (chatContainerRef.current) {
@@ -35,16 +92,33 @@ const LegalQA = () => {
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!userInput.trim() || !chat || isLoading) return;
+        if (!userInput.trim() || !chat || isLoading || !sessionId) return;
 
-        const userMessage: ChatMessage = { role: 'user', parts: [{ text: userInput }] };
+        const userMessageText = userInput.trim();
+        const userMessage: ChatMessage = { role: 'user', parts: [{ text: userMessageText }] };
         setMessages(prev => [...prev, userMessage]);
         setUserInput('');
         setIsLoading(true);
         setError(null);
 
         try {
-            const stream = await chat.sendMessageStream({ message: userInput });
+            // Save user message to database
+            await chatService.saveMessage(userId, sessionId, 'user', userMessageText);
+
+            // Update session title if this is the first message
+            if (messages.length === 0) {
+                const title = userMessageText.length > 50 
+                    ? userMessageText.substring(0, 50) + '...' 
+                    : userMessageText;
+                try {
+                    await chatService.updateChatSessionTitle(sessionId, userId, title);
+                } catch (err) {
+                    console.error('Error updating session title:', err);
+                }
+            }
+
+            // Send to AI and get streaming response
+            const stream = await chat.sendMessageStream({ message: userMessageText });
             let modelResponseText = '';
             setMessages(prev => [...prev, { role: 'model', parts: [{ text: '' }] }]);
 
@@ -56,14 +130,37 @@ const LegalQA = () => {
                     return newMessages;
                 });
             }
+
+            // Save model response to database after streaming completes
+            if (modelResponseText) {
+                await chatService.saveMessage(userId, sessionId, 'model', modelResponseText);
+            }
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
             setError(errorMessage);
-            setMessages(prev => [...prev, { role: 'model', parts: [{ text: `Sorry, I encountered an error: ${errorMessage}` }] }]);
+            const errorResponse: ChatMessage = { role: 'model', parts: [{ text: `Sorry, I encountered an error: ${errorMessage}` }] };
+            setMessages(prev => [...prev, errorResponse]);
+            
+            // Save error message to database if session exists
+            if (sessionId) {
+                try {
+                    await chatService.saveMessage(userId, sessionId, 'model', errorResponse.parts[0].text);
+                } catch (saveErr) {
+                    console.error('Error saving error message:', saveErr);
+                }
+            }
         } finally {
             setIsLoading(false);
         }
     };
+
+    if (isLoadingHistory) {
+        return (
+            <div className="flex items-center justify-center h-[85vh] p-4 md:p-6">
+                <LoadingSpinner />
+            </div>
+        );
+    }
 
     return (
         <div className="flex flex-col h-[85vh] p-4 md:p-6 bg-gray-50 dark:bg-slate-900">

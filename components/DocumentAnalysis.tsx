@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { analyzeDocument } from '../services/geminiService';
+import { documentService } from '../services/supabaseService';
 import type { AnalysisResult } from '../types';
 import LoadingSpinner from './LoadingSpinner';
 import Disclaimer from './Disclaimer';
@@ -23,11 +24,16 @@ const AnalysisSection = ({ title, items, icon }: { title: string; items: string[
 );
 
 
-const DocumentAnalysis = () => {
+interface DocumentAnalysisProps {
+    userId: string;
+}
+
+const DocumentAnalysis = ({ userId }: DocumentAnalysisProps) => {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [saveSuccess, setSaveSuccess] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -44,10 +50,31 @@ const DocumentAnalysis = () => {
         setIsLoading(true);
         setError(null);
         setAnalysisResult(null);
+        setSaveSuccess(false);
 
         try {
+            // Step 1: Analyze document with Gemini
             const result = await analyzeDocument(selectedFile);
             setAnalysisResult(result);
+
+            // Step 2: Upload file to Supabase Storage
+            const fileUrl = await documentService.uploadFile(selectedFile, userId);
+
+            // Step 3: Save document and analysis to database
+            await documentService.saveDocument({
+                userId,
+                fileName: selectedFile.name,
+                fileType: selectedFile.type || 'application/octet-stream',
+                fileSize: selectedFile.size,
+                fileUrl,
+                summary: result.summary,
+                pros: result.pros,
+                cons: result.cons,
+                potentialLoopholes: result.potentialLoopholes,
+                potentialChallenges: result.potentialChallenges,
+            });
+
+            setSaveSuccess(true);
         } catch (err) {
             setError(err instanceof Error ? err.message : "An unknown error occurred.");
         } finally {
@@ -98,6 +125,12 @@ const DocumentAnalysis = () => {
             {isLoading && <LoadingSpinner />}
             
             {error && <div className="p-4 bg-red-100 text-red-700 border border-red-300 rounded-lg dark:bg-red-900/20 dark:border-red-700 dark:text-red-300">{error}</div>}
+
+            {saveSuccess && (
+                <div className="p-4 bg-green-100 text-green-700 border border-green-300 rounded-lg dark:bg-green-900/20 dark:border-green-700 dark:text-green-300">
+                    ✓ Document analyzed and saved successfully!
+                </div>
+            )}
 
             {analysisResult && (
                 <div className="space-y-6 animate-fade-in">

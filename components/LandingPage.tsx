@@ -1,11 +1,24 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ArrowRightIcon } from './icons';
+import Login from './Login';
+import Register from './Register';
 
 interface LandingPageProps {
     onLogin: () => void;
 }
 
 const LandingPage = ({ onLogin }: LandingPageProps) => {
+    const [showLogin, setShowLogin] = useState(false);
+    const [showRegister, setShowRegister] = useState(false);
+
+    if (showLogin) {
+        return <Login onLoginSuccess={onLogin} onSwitchToRegister={() => { setShowLogin(false); setShowRegister(true); }} />;
+    }
+
+    if (showRegister) {
+        return <Register onRegisterSuccess={onLogin} onSwitchToLogin={() => { setShowRegister(false); setShowLogin(true); }} />;
+    }
+
     return (
         <div className="flex flex-col justify-center items-center min-h-screen bg-gray-50 dark:bg-slate-900 text-center p-4 relative">
             <header className="absolute top-0 left-0 right-0 p-4 md:px-8 md:py-6 flex justify-between items-center">
@@ -14,13 +27,13 @@ const LandingPage = ({ onLogin }: LandingPageProps) => {
                 </div>
                 <div className="space-x-2 md:space-x-4">
                     <button
-                        onClick={onLogin}
+                        onClick={() => setShowLogin(true)}
                         className="px-4 py-2 text-sm font-semibold text-brand-primary dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 transition-colors"
                     >
                         Login
                     </button>
                     <button
-                        onClick={onLogin}
+                        onClick={() => setShowRegister(true)}
                         className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                     >
                         Sign Up

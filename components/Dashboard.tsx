@@ -1,16 +1,20 @@
 import React, { useState } from 'react';
 import DocumentAnalysis from './DocumentAnalysis';
+import DocumentHistory from './DocumentHistory';
+import ChatHistory from './ChatHistory';
 import LegalQA from './LegalQA';
-import { DocumentIcon, ChatIcon, LogoutIcon } from './icons';
+import { DocumentIcon, ChatIcon, LogoutIcon, HistoryIcon } from './icons';
 
 interface DashboardProps {
     onLogout: () => void;
+    userId: string;
 }
 
-type ActiveTab = 'analysis' | 'qa';
+type ActiveTab = 'analysis' | 'history' | 'chathistory' | 'qa';
 
-const Dashboard = ({ onLogout }: DashboardProps) => {
+const Dashboard = ({ onLogout, userId }: DashboardProps) => {
     const [activeTab, setActiveTab] = useState<ActiveTab>('analysis');
+    const [loadChatSessionId, setLoadChatSessionId] = useState<string | null>(null);
 
     const TabButton = ({ tabName, label, icon }: { tabName: ActiveTab; label: string; icon: React.ReactNode }) => (
         <button
@@ -56,11 +60,21 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
 
             <main className="container mx-auto p-4 md:p-6">
                 <div className="w-full max-w-7xl mx-auto">
-                    <div className="flex border-b border-gray-200 dark:border-gray-700">
+                    <div className="flex border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
                         <TabButton 
                             tabName="analysis" 
                             label="Legal Analysis" 
                             icon={<DocumentIcon className="w-5 h-5" />}
+                        />
+                        <TabButton 
+                            tabName="history" 
+                            label="Documents" 
+                            icon={<HistoryIcon className="w-5 h-5" />}
+                        />
+                        <TabButton 
+                            tabName="chathistory" 
+                            label="Chat History" 
+                            icon={<ChatIcon className="w-5 h-5" />}
                         />
                         <TabButton 
                             tabName="qa" 
@@ -70,7 +84,24 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
                     </div>
                     
                     <div className="bg-white dark:bg-slate-800 rounded-b-lg shadow-lg">
-                        {activeTab === 'analysis' ? <DocumentAnalysis /> : <LegalQA />}
+                        {activeTab === 'analysis' && <DocumentAnalysis userId={userId} />}
+                        {activeTab === 'history' && <DocumentHistory userId={userId} />}
+                        {activeTab === 'chathistory' && (
+                            <ChatHistory 
+                                userId={userId} 
+                                onLoadSession={(sessionId) => {
+                                    setLoadChatSessionId(sessionId);
+                                    setActiveTab('qa');
+                                }}
+                            />
+                        )}
+                        {activeTab === 'qa' && (
+                            <LegalQA 
+                                userId={userId} 
+                                loadSessionId={loadChatSessionId}
+                                onSessionLoaded={() => setLoadChatSessionId(null)}
+                            />
+                        )}
                     </div>
                 </div>
             </main>
